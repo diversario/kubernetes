@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"strconv"
 
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
@@ -296,12 +297,26 @@ func canIdentifyUser(config restclient.Config) bool {
 
 // Namespace implements ClientConfig
 func (config *DirectClientConfig) Namespace() (string, bool, error) {
-	if config.overrides != nil && config.overrides.Context.Namespace != "" {
+	nsFilename := "/tmp/kubectl_namespace." + strconv.Itoa(os.Getppid())
+	prevNamespace := ""
+
+	nsFileContent, err := ioutil.ReadFile(nsFilename)
+
+	if err == nil {
+		prevNamespace = string(nsFileContent)
+	}
+
+	if config.overrides != nil && config.overrides.Context.Namespace != "" || prevNamespace != "" {
 		// In the event we have an empty config but we do have a namespace override, we should return
 		// the namespace override instead of having config.ConfirmUsable() return an error. This allows
 		// things like in-cluster clients to execute `kubectl get pods --namespace=foo` and have the
 		// --namespace flag honored instead of being ignored.
-		return config.overrides.Context.Namespace, true, nil
+		if config.overrides.Context.Namespace != "" {
+			ioutil.WriteFile(nsFilename, []byte(config.overrides.Context.Namespace), 0644)
+			return config.overrides.Context.Namespace, true, nil
+		} else {
+			return prevNamespace, true, nil
+		}
 	}
 
 	if err := config.ConfirmUsable(); err != nil {
